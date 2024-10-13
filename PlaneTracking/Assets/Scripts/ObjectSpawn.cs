@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
@@ -12,6 +13,10 @@ public class ObjectSpawn : MonoBehaviour
     private ARRaycastManager aRRaycastManager;
     private List<ARRaycastHit> hits = new List<ARRaycastHit>();
     private GameObject spawnedObject;
+    private Vector3 initialScale;
+    private float initialDistanceBetweenFingers;
+    private Vector3 initialScaleAtPinch;
+    private bool isRotating;
 
     [SerializeField]
     private Button redButton;
@@ -19,8 +24,6 @@ public class ObjectSpawn : MonoBehaviour
     private Button greenButton;
     [SerializeField]
     private Button blueButton;
-
-    private Vector3 initialScale;
 
     private void Awake()
     {
@@ -50,38 +53,71 @@ public class ObjectSpawn : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetMouseButtonDown(0))
+        HandleMouseInput();
+        HandleTouchInput();
+    }
+
+    private void HandleMouseInput()
+    {
+        if (spawnedObject == null) return;
+
+        float scrollInput = Input.GetAxis("Mouse ScrollWheel");
+        if (scrollInput != 0f)
         {
-            Vector2 mousePosition = Input.mousePosition;
-            if (spawnedObject == null && aRRaycastManager.Raycast(mousePosition, hits, TrackableType.PlaneWithinPolygon))
+            spawnedObject.transform.localScale += Vector3.one * scrollInput;
+        }
+
+        if (Input.GetMouseButton(0))
+        {
+            float rotationX = Input.GetAxis("Mouse X") * 200f * Time.deltaTime;
+            float rotationY = Input.GetAxis("Mouse Y") * 200f * Time.deltaTime;
+
+            spawnedObject.transform.Rotate(Vector3.up, -rotationX, Space.World);
+            spawnedObject.transform.Rotate(Vector3.right, rotationY, Space.World);
+        }
+    }
+
+    private void HandleTouchInput()
+    {
+        if (spawnedObject == null) return;
+
+        if (EnTouch.Touch.activeTouches.Count == 2)
+        {
+            EnTouch.Touch finger1 = EnTouch.Touch.activeTouches[0];
+            EnTouch.Touch finger2 = EnTouch.Touch.activeTouches[1];
+
+            if (finger1.phase == UnityEngine.InputSystem.TouchPhase.Began || finger2.phase == UnityEngine.InputSystem.TouchPhase.Began)
             {
-                ARRaycastHit hit = hits[0];
-                Pose pose = hit.pose;
-
-                Vector3 adjustedPosition = pose.position;
-                adjustedPosition.y += 0.3f;
-
-                spawnedObject = Instantiate(prefab, adjustedPosition, pose.rotation);
-                initialScale = spawnedObject.transform.localScale;
+                initialDistanceBetweenFingers = Vector2.Distance(finger1.screenPosition, finger2.screenPosition);
+                initialScaleAtPinch = spawnedObject.transform.localScale;
+            }
+            else if (finger1.phase == UnityEngine.InputSystem.TouchPhase.Moved || finger2.phase == UnityEngine.InputSystem.TouchPhase.Moved)
+            {
+                float currentDistanceBetweenFingers = Vector2.Distance(finger1.screenPosition, finger2.screenPosition);
+                float scaleFactor = currentDistanceBetweenFingers / initialDistanceBetweenFingers;
+                spawnedObject.transform.localScale = initialScaleAtPinch * scaleFactor;
             }
         }
 
-        if (spawnedObject != null)
+        if (EnTouch.Touch.activeTouches.Count == 1)
         {
-            if (Input.GetMouseButton(0))
+            EnTouch.Touch finger = EnTouch.Touch.activeTouches[0];
+
+            if (finger.phase == UnityEngine.InputSystem.TouchPhase.Began)
             {
-                float rotationX = Input.GetAxis("Mouse X") * 200f * Time.deltaTime;
-                float rotationY = Input.GetAxis("Mouse Y") * 200f * Time.deltaTime;
+                isRotating = true;
+            }
+            else if (finger.phase == UnityEngine.InputSystem.TouchPhase.Moved && isRotating)
+            {
+                float rotationX = finger.delta.x * 0.5f;
+                float rotationY = finger.delta.y * 0.5f;
 
                 spawnedObject.transform.Rotate(Vector3.up, -rotationX, Space.World);
                 spawnedObject.transform.Rotate(Vector3.right, rotationY, Space.World);
             }
-
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (scroll != 0.0f)
+            else if (finger.phase == UnityEngine.InputSystem.TouchPhase.Ended || finger.phase == UnityEngine.InputSystem.TouchPhase.Canceled)
             {
-                Vector3 newScale = spawnedObject.transform.localScale + Vector3.one * scroll;
-                spawnedObject.transform.localScale = Vector3.Max(newScale, initialScale * 0.1f);
+                isRotating = false;
             }
         }
     }
